@@ -1,0 +1,225 @@
+/*
+ * BishopWare Software
+ * 
+ * File: GeneralUtilities.java
+ * 
+ * Copyright: 2009 Ken Hines and BishopWare
+ * 
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ * 
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
+
+package com.bishopware.util;
+
+import java.io.*;
+import java.util.*;
+
+public class GeneralUtilities {
+
+    // The difference in milliseconds between the unix epoch and the Gregorian
+    // calendar epoch
+    private static final long k_gregorianOffsetInMillis = 1221929280000l;
+
+    private static long m_machineID;
+
+    private static long s_lastDateUsed = 0;
+
+    private static String s_OS;
+
+    static {
+        setupMachineID();
+    }
+
+    private static String extractMACString(String stringRetval, int lastIndex) {
+        int end = Math.min(stringRetval.length(), lastIndex + 3);
+
+        int bytes = 1;
+
+        int priorLastIndex = lastIndex;
+        while (bytes != 5 && lastIndex != -1 && lastIndex > 1) {
+            lastIndex = stringRetval.lastIndexOf(':', --lastIndex);
+            if (priorLastIndex - lastIndex == 3
+                    || priorLastIndex - lastIndex == 2) {
+                ++bytes;
+                priorLastIndex = lastIndex;
+            }
+        }
+
+        if (bytes == 5 && lastIndex > 1) {
+            stringRetval = stringRetval.substring(lastIndex - 2, end).trim();
+        }
+        else {
+            stringRetval = null;
+        }
+        return stringRetval;
+    }
+
+    private static long getTimeIn100Nanos() {
+        long currentTime = (System.currentTimeMillis() + k_gregorianOffsetInMillis) * 10000;
+
+        if (currentTime > s_lastDateUsed) {
+            s_lastDateUsed = currentTime;
+        }
+        else {
+            currentTime = ++s_lastDateUsed;
+        }
+        return currentTime;
+    }
+
+    private static void setupMachineID() {
+        byte[] mac = null;
+
+        Process systemProcess = null;
+        BufferedReader in = null;
+
+        try {
+            // Try to get a MAC for this machine.
+            s_OS = System.getProperty("os.name");
+            if (s_OS.startsWith("Windows")) {
+                systemProcess = Runtime.getRuntime().exec(
+                    new String[] { "ipconfig", "/all" }, null);
+            }
+            else if (new File("/sbin/ifconfig").exists()) {
+                systemProcess = Runtime.getRuntime().exec(
+                    new String[] { "/sbin/ifconfig", "-a" }, null);
+            }
+
+            if (systemProcess != null) {
+                in = new BufferedReader(new InputStreamReader(
+                        systemProcess.getInputStream()), 128);
+
+                // Read each line of the response until we find one that
+                // contains a MAC
+                for (String line = in.readLine(); line != null; line = in
+                    .readLine()) {
+                    mac = parseForMAC(line);
+                    if (mac != null && mac[0] != 0xff) {
+                        break;
+                    }
+                }
+            }
+
+        }
+        catch (Exception ex) {
+        }
+        finally {
+            if (systemProcess != null) {
+                if (in != null) {
+                    try {
+                        in.close();
+                    }
+                    catch (IOException ex) {
+                    }
+                }
+                try {
+                    systemProcess.getErrorStream().close();
+                }
+                catch (IOException ex) {
+                }
+                try {
+                    systemProcess.getOutputStream().close();
+                }
+                catch (IOException ex) {
+                }
+                systemProcess.destroy();
+            }
+        }
+
+        if (mac != null) {
+            m_machineID |= bytesToLong(mac);
+            long randomPrefix = (long) (Math.random() * 0x3FFF);
+            m_machineID |= (randomPrefix << 48);
+        }
+    }
+
+    public static long bytesToLong(byte[] bytes) {
+        long retval = 0;
+        for (byte aByte : bytes) {
+            retval = retval << 8 | ((long) aByte & 0xff);
+        }
+        return retval;
+    }
+
+    public static synchronized UUID genId() {
+        // UUID retval = null;
+        // if (m_machineID != 0) {
+        // retval = new UUID(getPrefixWord(), m_machineID);
+        // }
+        // else {
+        // retval = UUID.randomUUID();
+        // }
+        return UUID.randomUUID();
+    }
+
+    public static synchronized long getPrefixWord() {
+
+        long currentTime = getTimeIn100Nanos();
+
+        return currentTime << 32 | ((currentTime >> 16) & 0xffff0000) | 0x1000
+                | ((currentTime >> 48) & 0xfff);
+    }
+
+    public static byte[] parseBytesFromMacString(String s)
+        throws NullPointerException {
+        s = s.toLowerCase();
+        List<String> tokens = StringUtilities.tokenize(s, ':');
+        byte[] retval = new byte[tokens.size()];
+        int it = 0;
+        for (String token : tokens) {
+            retval[it] = (byte) Integer.parseInt(token, 16);
+            it++;
+        }
+        return retval;
+    }
+
+    public static byte[] parseForMAC(String in) {
+        String stringRetval = in;
+
+        // Fix windows MAC representation, if necessary
+        if (stringRetval.indexOf('-') > -1) {
+            stringRetval = stringRetval.replace('-', ':');
+        }
+
+        int lastIndex = stringRetval.lastIndexOf(':');
+        if (lastIndex > stringRetval.length() - 2) {
+            stringRetval = null;
+        }
+        else {
+            stringRetval = extractMACString(stringRetval, lastIndex);
+            if (stringRetval != null) {
+                byte[] retval = parseBytesFromMacString(stringRetval);
+
+                return retval;
+            }
+            else {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    public static String zeroString(int numZeroes) {
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < numZeroes; ++i) {
+            builder.append('0');
+        }
+        return builder.toString();
+    }
+
+    public static <T> List<T> reverseCopy(List<T> items) {
+        LinkedList<T> retval = new LinkedList<T>();
+        for (T item : items) {
+            retval.add(0, item);
+        }
+        return retval;
+    }
+}

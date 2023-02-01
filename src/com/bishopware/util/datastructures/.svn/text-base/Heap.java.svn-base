@@ -1,0 +1,148 @@
+/*
+ * BishopWare Software
+ * 
+ * File: Heap.java
+ * 
+ * Copyright: 2009 Ken Hines and BishopWare
+ * 
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ * 
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
+
+package com.bishopware.util.datastructures;
+
+/**
+ * A simple lg(n) min priority queue
+ * 
+ * @author Ken Hines
+ */
+
+public class Heap<t_value extends Comparable<t_value>> {
+    t_value[] objectArray;
+
+    int lastElement = -1;
+
+    @SuppressWarnings("unchecked")
+    public Heap(int size) {
+        objectArray = (t_value[]) new Object[size];
+    }
+
+    public synchronized t_value removeTop() {
+        t_value retval = null;
+        if (lastElement >= 0) {
+            retval = objectArray[0];
+            lastElement--;
+            objectArray[0] = null;
+        }
+        if (lastElement == 0) {
+            objectArray[0] = objectArray[1];
+        }
+        if (lastElement > 0) {
+            objectArray[0] = objectArray[lastElement + 1];
+            int ind1 = 1;
+            int ind2 = 2;
+            while (true) {
+                if (ind2 > lastElement) {
+                    // we don't have a right child
+                    if ((ind2 - 1) == lastElement) {
+                        // We do have a left child, however. Are we greater than
+                        // this?
+                        if (objectArray[ind1 - 1]
+                                .compareTo(objectArray[ind2 - 1]) > 0) {
+                            t_value swapper = objectArray[ind2 - 1];
+                            objectArray[ind2 - 1] = objectArray[ind1 - 1];
+                            objectArray[ind1 - 1] = swapper;
+                        }
+                    }
+                    break;
+                }
+                // Well - we have two children. Are we greater than either of
+                // them?
+                else if (objectArray[ind1 - 1].compareTo(objectArray[ind2 - 1]) > 0
+                        || objectArray[ind1 - 1].compareTo(objectArray[ind2]) > 0) {
+                    // If so, we better swap with the minimum. Which one is
+                    // that?
+                    if (objectArray[ind2 - 1].compareTo(objectArray[ind2]) > 0) {
+                        // Swap with ind2, it has the smaller child.
+                        t_value swapper = objectArray[ind2];
+                        objectArray[ind2] = objectArray[ind1 - 1];
+                        objectArray[ind1 - 1] = swapper;
+                        // Now we need to make sure we continue to track the
+                        // right node
+                        ind1 = ind2 + 1; // such that on subtracting one next
+                        // time,
+                        // we end up in the right place.
+                        ind2 = ind1 << 1;
+                    }
+                    else {
+                        // Apparently it's ind2 - 1 that we need to swap with
+                        t_value swapper = objectArray[ind2 - 1];
+                        objectArray[ind2 - 1] = objectArray[ind1 - 1];
+                        objectArray[ind1 - 1] = swapper;
+                        ind1 = ind2;
+                        ind2 = ind2 << 1;
+                    }
+                }
+                else {
+                    break; // We don't need to descend further.
+                }
+            }
+        }
+        return retval;
+    }
+
+    @SuppressWarnings("unchecked")
+    public synchronized void insert(t_value item) {
+        // Grow the queue if necessary
+        if (objectArray.length <= lastElement + 1) {
+            t_value[] tem = (t_value[]) new Object[objectArray.length * 2];
+            System.arraycopy(objectArray, 0, tem, 0, objectArray.length);
+            objectArray = tem;
+        }
+
+        // Put new elements on the bottom, and have them climb to an appropriate
+        // position.
+        lastElement++;
+        objectArray[lastElement] = item;
+        int ind1 = lastElement + 1;
+        int ind2 = ind1 >> 1;
+        while (ind1 > 1) {
+            if (objectArray[ind1 - 1].compareTo(objectArray[ind2 - 1]) < 0) {
+                t_value swapper = objectArray[ind2 - 1];
+                objectArray[ind2 - 1] = objectArray[ind1 - 1];
+                objectArray[ind1 - 1] = swapper;
+            }
+            else {
+                break; // We can't climb any higher.
+            }
+            ind1 = ind2;
+            ind2 = ind2 >> 1;
+        }
+    }
+
+    public t_value peekTop() {
+        return objectArray[0];
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder builder = new StringBuilder("Queue: \n");
+        for (t_value element : objectArray) {
+            builder.append("\t" + element + "\n");
+        }
+        return builder.toString();
+    }
+
+    public void flush() {
+        lastElement = -1;
+    }
+}

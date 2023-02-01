@@ -1,0 +1,341 @@
+/*
+ * BishopWare Software
+ * 
+ * File: XMLUtilities.java
+ * 
+ * Copyright: 2009 Kym Hines and BishopWare
+ * 
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ * 
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
+
+package com.bishopware.util.xml;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.UUID;
+
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.xpath.XPath;
+import javax.xml.xpath.XPathConstants;
+import javax.xml.xpath.XPathExpressionException;
+import javax.xml.xpath.XPathFactory;
+
+import org.w3c.dom.Attr;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.NamedNodeMap;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
+import org.xml.sax.SAXException;
+
+import com.bishopware.util.StringUtilities;
+
+public class XMLUtilities {
+
+    private static void fillMapFromAttributes(NamedNodeMap attributes,
+            Map<String, String> retval) {
+        for (int i = 0; i < attributes.getLength(); ++i) {
+            Attr node = (Attr) attributes.item(i);
+            retval.put(node.getName(), node.getValue());
+        }
+    }
+
+    public static void attachAlienChild(Element parentElement, Element newChild) {
+        Document document = parentElement.getOwnerDocument();
+        Node value = document.adoptNode(newChild);
+        parentElement.appendChild(value);
+
+    }
+
+    public static Map<String, String> buildMapFromAttributes(
+            NamedNodeMap nodeMap) {
+        Map<String, String> retval = new HashMap<String, String>();
+        fillMapFromAttributes(nodeMap, retval);
+        return retval;
+    }
+
+    public static Map<String, String> buildSortedMapFromAttributes(
+            NamedNodeMap attributes) {
+        Map<String, String> retval = new TreeMap<String, String>();
+        fillMapFromAttributes(attributes, retval);
+        return retval;
+    }
+
+    public static Map<String, String> buildSortedNonEmptyMapFromAttributes(
+            NamedNodeMap nodeMap) {
+        Map<String, String> retval = new TreeMap<String, String>();
+        for (int i = 0; i < nodeMap.getLength(); ++i) {
+            Attr node = (Attr) nodeMap.item(i);
+            if (!"".equals(node.getValue())) {
+                retval.put(node.getName(), node.getValue());
+            }
+        }
+        return retval;
+    }
+
+    public static Element createChildFor(Node parent, Node nextSibling,
+            String tagName) {
+        Document document = parent.getOwnerDocument();
+        Element newChild = document.createElement(tagName);
+        if (nextSibling == null) {
+            parent.appendChild(newChild);
+        }
+        else {
+            parent.insertBefore(newChild, nextSibling);
+        }
+        return newChild;
+    }
+
+    public static Element createChildFor(Node parent, String tagName) {
+        Document document = parent.getOwnerDocument();
+        Element newChild = document.createElement(tagName);
+        parent.appendChild(newChild);
+        return newChild;
+    }
+
+    public static Document createDocument() throws ParserConfigurationException {
+        DocumentBuilder builder = DocumentBuilderFactory.newInstance()
+                .newDocumentBuilder();
+        Document doc = builder.newDocument();
+        return doc;
+    }
+
+    public static void deepCopyChildren(Element targetElement,
+            Element sourceElement) {
+        NodeList sourceChildren = sourceElement.getChildNodes();
+        for (int i = 0; i < sourceChildren.getLength(); ++i) {
+            if (sourceChildren.item(i) instanceof Element) {
+                Element sourceChild = (Element) sourceChildren.item(i);
+                deepCopyElement(targetElement, null, null, sourceChild);
+            }
+        }
+    }
+
+    public static Element deepCopyElement(Node parent, Node nextSibling,
+            String newNodeName, Element sourceNode) {
+        Element retval = shallowCopyElement(parent, nextSibling, newNodeName,
+                sourceNode);
+
+        NodeList children = sourceNode.getChildNodes();
+        for (int i = 0; i < children.getLength(); ++i) {
+            Node val = children.item(i);
+            if (val instanceof Element) {
+                deepCopyElement(retval, null, ((Element) val).getTagName(),
+                        (Element) val);
+            }
+        }
+        return retval;
+    }
+
+    public static boolean elementHasChildren(Element element) {
+        return element.getChildNodes().getLength() > 0;
+    }
+
+    public static String escapeString(String s, boolean escapeLinefeeds) {
+        StringBuilder result = new StringBuilder();
+        for (int i = 0; i < s.length(); ++i) {
+            char c = s.charAt(i);
+            switch (c) {
+            case '"':
+                result.append("&quot;");
+                break;
+            case '\'':
+                result.append("&apos;");
+                break;
+            case '&':
+                result.append("&amp;");
+                break;
+            case '<':
+                result.append("&lt;");
+                break;
+            case '>':
+                result.append("&gt;");
+                break;
+            case 0x0a:
+                result.append(escapeLinefeeds ? "&#xA;" : c);
+                break;
+            case 0x0d:
+                result.append(escapeLinefeeds ? "&#xD;" : c);
+                break;
+            default:
+                result.append(c);
+            }
+        }
+        return result.toString();
+    }
+
+    /**
+     * This is a workaround for xerces incomplete lazy loading.
+     */
+    public static void forceElementLoad(Element element) {
+        NamedNodeMap attributes = element.getAttributes();
+        for (int i = 0; i < attributes.getLength(); ++i) {
+            Attr attribute = (Attr) attributes.item(i);
+            attribute.getValue();
+        }
+
+        NodeList children = element.getChildNodes();
+        for (int i = 0; i < children.getLength(); ++i) {
+            if (children.item(i) instanceof Element) {
+                forceElementLoad((Element) children.item(i));
+            }
+        }
+    }
+
+    public static List<Element> getChildElements(Element layoutNode) {
+        List<Element> retval = new LinkedList<Element>();
+        NodeList nodes = layoutNode.getChildNodes();
+        for (int i = 0; i < nodes.getLength(); ++i) {
+            if (nodes.item(i) instanceof Element) {
+                Element element = (Element) nodes.item(i);
+                retval.add(element);
+            }
+        }
+        return retval;
+    }
+
+    public static List<Element> getChildElementsOfType(Element layoutNode,
+            String tag) {
+        List<Element> retval = new LinkedList<Element>();
+        NodeList nodes = layoutNode.getChildNodes();
+        for (int i = 0; i < nodes.getLength(); ++i) {
+            if (nodes.item(i) instanceof Element) {
+                Element element = (Element) nodes.item(i);
+                if (tag.equals(element.getTagName())) {
+                    retval.add(element);
+                }
+            }
+        }
+        return retval;
+    }
+
+    public static Document getDomFromFile(File file)
+            throws ParserConfigurationException, FileNotFoundException,
+            SAXException, IOException {
+        InputStream inputStream = new FileInputStream(file);
+        Document doc = getDomFromStream(inputStream);
+        return doc;
+    }
+
+    public static Document getDomFromStream(InputStream inputStream)
+            throws ParserConfigurationException, SAXException, IOException {
+        DocumentBuilder builder = DocumentBuilderFactory.newInstance()
+                .newDocumentBuilder();
+        Document doc = builder.parse(inputStream);
+        return doc;
+    }
+
+    public static Document getDomFromFile(String storagePath)
+            throws FileNotFoundException, ParserConfigurationException,
+            SAXException, IOException {
+
+        File file = new File(storagePath);
+        return getDomFromFile(file);
+    }
+
+    public static Element getElementForId(Document doc, UUID id)
+            throws XPathExpressionException {
+        return getElementForId("*", doc, id);
+    }
+
+    public static Element getElementForId(String typeName, Document doc, UUID id)
+            throws XPathExpressionException {
+        String expression = "//" + typeName + "[@id=\"" + id + "\"]";
+        Element target = getElementForXPath(doc, expression);
+        return target;
+    }
+
+    public static Element getElementForXPath(Document doc, String expression)
+            throws XPathExpressionException {
+        NodeList nodes = getAllNodesForXpath(doc, expression);
+        Element target = null;
+        if (nodes.getLength() == 1) {
+            // Should only be one. IF there are more, there is an error.
+            target = (Element) nodes.item(0);
+        }
+        else if (nodes.getLength() > 1) {
+            throw new RuntimeException("More than one node matches expression "
+                    + expression);
+        }
+        else {
+            target = null;
+        }
+        return target;
+    }
+
+    public static NodeList getAllNodesForXpath(Document doc, String expression)
+            throws XPathExpressionException {
+        XPathFactory factory = XPathFactory.newInstance();
+        XPath xPath = factory.newXPath();
+        NodeList nodes = (NodeList) xPath.evaluate(expression, doc,
+                XPathConstants.NODESET);
+        return nodes;
+    }
+
+    public static void saveDomToFile(Document doc, File file)
+            throws IOException {
+        KXMLWriter outputer = new KXMLWriter(new FileOutputStream(file), false);
+        outputer.output(doc);
+        outputer.close();
+    }
+
+    public static void saveDomToFile(Document doc, String storagePath)
+            throws IOException {
+        // Make sure all the directories are created
+        File directory = new File(StringUtilities
+                .removeLastPathSegment(storagePath));
+        directory.mkdirs();
+
+        File file = new File(storagePath);
+        saveDomToFile(doc, file);
+    }
+
+    public static Element shallowCopyElement(Node parent, Node nextSibling,
+            String newNodeName, Element sourceNode) {
+        if (newNodeName == null) {
+            newNodeName = sourceNode.getTagName();
+        }
+        Element retval = createChildFor(parent, nextSibling, newNodeName);
+        retval.setTextContent(sourceNode.getTextContent());
+
+        NamedNodeMap attributes = sourceNode.getAttributes();
+        for (int i = 0; i < attributes.getLength(); ++i) {
+            Attr attr = (Attr) attributes.item(i);
+            retval.setAttribute(attr.getName(), attr.getValue());
+        }
+        return retval;
+    }
+
+    public static Element getTopElement(InputStream stream) {
+        try {
+            Document document = getDomFromStream(stream);
+            return document.getDocumentElement();
+        }
+        catch (Exception ex) {
+            // TODO Auto-generated catch block
+            ex.printStackTrace();
+        }
+        return null;
+    }
+}
